@@ -8,7 +8,7 @@ on:
       - '.github/workflows/deploy.yml'
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -23,3 +23,4 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./codebases/startup-knowledge-website
+          force_orphan: true
