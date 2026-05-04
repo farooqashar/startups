@@ -1,5 +1,24 @@
 /* Startup Knowledge — Custom Styles */
 
+/* Input and placeholder styling */
+input::placeholder {
+  color: #64748b;
+  opacity: 0.7;
+}
+
+.dark input::placeholder {
+  color: #94a3b8;
+  opacity: 0.8;
+}
+
+input {
+  color: #1e293b;
+}
+
+.dark input {
+  color: #f1f5f9;
+}
+
 /* Skeleton loader animation */
 @keyframes skeleton-pulse {
   0%, 100% { opacity: 0.6; }
