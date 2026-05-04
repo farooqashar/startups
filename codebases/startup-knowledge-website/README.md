@@ -2,6 +2,8 @@
 
 An interactive, beautiful knowledge base website for learning about startups. Built with pure HTML/CSS/JavaScript, no build system required.
 
+**Live at:** https://farooqashar.github.io/startups
+
 ## Features
 
 - **Dynamic Content Loading** — Fetches markdown from GitHub API with intelligent caching
