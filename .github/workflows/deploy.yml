@@ -8,7 +8,9 @@ on:
       - '.github/workflows/deploy.yml'
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   deploy:
@@ -16,17 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Copy website files to root
-        run: |
-          cp codebases/startup-knowledge-website/index.html .
-          rm -rf css js
-          cp -r codebases/startup-knowledge-website/css .
-          cp -r codebases/startup-knowledge-website/js .
-
-      - name: Commit and push
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add index.html css/ js/
-          git diff --quiet && git diff --staged --quiet || git commit -m "Deploy: sync website from codebases/ to root [skip ci]"
-          git push
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./codebases/startup-knowledge-website
