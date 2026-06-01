@@ -15,6 +15,10 @@ window.SK.github = (function() {
 
   // Fetch a file from GitHub with 3-tier caching strategy
   async function fetchFile(path) {
+    if (!path) {
+      throw new Error('Path is required');
+    }
+
     // Check sessionStorage (same session, no requests)
     const sessionCached = sessionStorage.getItem(CACHE_PREFIX + path);
     if (sessionCached) {
@@ -35,15 +39,15 @@ window.SK.github = (function() {
 
     // If rate-limited, use embedded fallback
     if (rateLimitRemaining <= 0) {
-      const excerpt = window.SK.EXCERPTS[path];
+      const excerpt = window.SK.EXCERPTS && window.SK.EXCERPTS[path];
       if (excerpt) {
-        return excerpt + '\n\n> ⚠️ **Note**: Showing cached preview. [View full content on GitHub](https://github.com/farooqashar/startups/blob/main/' + path + ')';
+        return excerpt + '\n\n> ⚠️ **Note**: Showing cached preview due to rate limiting. [View full content on GitHub](https://github.com/farooqashar/startups/blob/main/' + path + ')';
       }
     }
 
     // Prevent duplicate requests for same file
     if (inFlight.has(path)) {
-      return new Promise(resolve => {
+      return new Promise((resolve, reject) => {
         const checkInterval = setInterval(() => {
           const cached = sessionStorage.getItem(CACHE_PREFIX + path);
           if (cached) {
@@ -51,6 +55,12 @@ window.SK.github = (function() {
             resolve(cached);
           }
         }, 100);
+
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          reject(new Error('Timeout waiting for file'));
+        }, 10000);
       });
     }
 
@@ -59,7 +69,8 @@ window.SK.github = (function() {
     try {
       const response = await fetch(`${API_BASE}/${path}`, {
         headers: {
-          'Accept': 'application/vnd.github.v3+json'
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'Startup-Knowledge-Base'
         }
       });
 
@@ -70,16 +81,28 @@ window.SK.github = (function() {
       if (reset) rateLimitReset = new Date(parseInt(reset) * 1000);
 
       if (!response.ok) {
-        // Use embedded fallback if API fails
-        const excerpt = window.SK.EXCERPTS[path];
+        // Try to use embedded fallback if API fails
+        const excerpt = window.SK.EXCERPTS && window.SK.EXCERPTS[path];
         if (excerpt) {
-          return excerpt + '\n\n> ⚠️ **Error loading from GitHub**. [View full content on GitHub](https://github.com/farooqashar/startups/blob/main/' + path + ')';
+          console.warn(`GitHub API error for ${path}:`, response.status);
+          return excerpt + '\n\n> ⚠️ **Error**: Could not load from GitHub (${response.status}). [View full content on GitHub](https://github.com/farooqashar/startups/blob/main/' + path + ')';
         }
-        throw new Error(`Failed to fetch ${path}: ${response.status}`);
+        throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
-      const content = atob(data.content.replace(/\n/g, ''));
+      if (!data.content) {
+        throw new Error('No content in GitHub response');
+      }
+
+      // Decode base64 content
+      let content;
+      try {
+        content = atob(data.content.replace(/\n/g, ''));
+      } catch (e) {
+        console.error('Failed to decode content:', e);
+        throw new Error('Failed to decode file content');
+      }
 
       // Cache in both sessionStorage and localStorage
       sessionStorage.setItem(CACHE_PREFIX + path, content);
@@ -89,11 +112,13 @@ window.SK.github = (function() {
       return content;
     } catch (error) {
       console.error('GitHub API error:', error);
+      
       // Fall back to embedded excerpt
-      const excerpt = window.SK.EXCERPTS[path];
+      const excerpt = window.SK.EXCERPTS && window.SK.EXCERPTS[path];
       if (excerpt) {
-        return excerpt + '\n\n> ⚠️ **Unable to load full content**. [View on GitHub](https://github.com/farooqashar/startups/blob/main/' + path + ')';
+        return excerpt + '\n\n> ⚠️ **Unable to load**: ' + error.message + '. [View on GitHub](https://github.com/farooqashar/startups/blob/main/' + path + ')';
       }
+      
       throw error;
     } finally {
       inFlight.delete(path);
@@ -119,13 +144,13 @@ window.SK.github = (function() {
       const keysToRemove = [];
       for (let i = 0; i < sessionStorage.length; i++) {
         const key = sessionStorage.key(i);
-        if (key.startsWith(CACHE_PREFIX)) keysToRemove.push(key);
+        if (key && key.startsWith(CACHE_PREFIX)) keysToRemove.push(key);
       }
       keysToRemove.forEach(key => sessionStorage.removeItem(key));
 
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key.startsWith(CACHE_PREFIX)) keysToRemove.push(key);
+        if (key && key.startsWith(CACHE_PREFIX)) keysToRemove.push(key);
       }
       keysToRemove.forEach(key => localStorage.removeItem(key));
     }
@@ -136,10 +161,16 @@ window.SK.github = (function() {
     rateLimitRemaining = limit;
   }
 
+  // Check if content is cached
+  function isCached(path) {
+    return !!sessionStorage.getItem(CACHE_PREFIX + path) || !!localStorage.getItem(CACHE_PREFIX + path);
+  }
+
   return {
     fetchFile,
     getRateLimitInfo,
     clearCache,
     setRateLimit,
+    isCached,
   };
 })();

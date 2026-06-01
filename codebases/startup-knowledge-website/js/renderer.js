@@ -21,13 +21,13 @@ window.SK.renderer = (function() {
 
       return `<h${level} id="${id}" class="group">
         ${text}
-        <a href="#${id}" class="ml-2 opacity-0 group-hover:opacity-50 transition-opacity">#</a>
+        <a href="#${id}" class="ml-2 opacity-0 group-hover:opacity-50 transition-opacity text-slate-400">#</a>
       </h${level}>`;
     },
 
     table(header, body) {
       return `<div class="table-wrapper overflow-x-auto">
-        <table>
+        <table class="w-full border-collapse">
           <thead>${header}</thead>
           <tbody>${body}</tbody>
         </table>
@@ -40,13 +40,24 @@ window.SK.renderer = (function() {
     },
 
     link(href, title, text) {
+      if (!href) return text;
       const isExternal = !href.startsWith('#') && !href.startsWith('/');
       const attrs = isExternal ? `target="_blank" rel="noopener noreferrer"` : '';
-      return `<a href="${href}" ${attrs}>${text}</a>`;
+      return `<a href="${href}" ${attrs} title="${title || ''}">${text}</a>`;
     },
 
     codespan(code) {
       return `<code>${escapeHtml(code)}</code>`;
+    },
+
+    image(href, title, text) {
+      return `<img src="${href}" alt="${text}" title="${title || text}" class="rounded-lg max-w-full h-auto" loading="lazy">`;
+    },
+
+    list(body, ordered) {
+      const tag = ordered ? 'ol' : 'ul';
+      const attrs = ordered ? ' class="list-decimal"' : ' class="list-disc"';
+      return `<${tag}${attrs}>${body}</${tag}>`;
     }
   };
 
@@ -61,7 +72,13 @@ window.SK.renderer = (function() {
 
   // Render markdown to HTML
   function renderMarkdown(markdown) {
-    return marked.parse(markdown);
+    if (!markdown) return '';
+    try {
+      return marked.parse(markdown);
+    } catch (error) {
+      console.error('Markdown render error:', error);
+      return `<p class="text-red-600">Error rendering content: ${escapeHtml(error.message)}</p>`;
+    }
   }
 
   // Extract headings and build TOC
@@ -70,7 +87,7 @@ window.SK.renderer = (function() {
     container.innerHTML = htmlContent;
 
     const headings = Array.from(container.querySelectorAll('h2, h3, h4')).map(h => ({
-      id: h.id,
+      id: h.id || generateId(h.textContent),
       text: h.textContent.replace('#', '').trim(),
       level: parseInt(h.tagName[1]),
     }));
@@ -78,9 +95,19 @@ window.SK.renderer = (function() {
     return headings;
   }
 
+  // Generate ID from text if missing
+  function generateId(text) {
+    return text.toLowerCase()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-');
+  }
+
   // Render TOC as HTML
   function renderTOC(headings) {
-    if (headings.length === 0) return '';
+    if (!headings || headings.length === 0) {
+      return '<p class="text-slate-500 text-sm">No sections in this article</p>';
+    }
 
     let html = '<ol class="space-y-2">';
     let currentLevel = 2;
@@ -100,10 +127,15 @@ window.SK.renderer = (function() {
         currentLevel = h.level;
       }
 
-      html += `<li><a href="#${h.id}" class="text-slate-600 dark:text-slate-400 hover:text-primary-600 transition-colors">${h.text}</a></li>`;
+      html += `<li><a href="#${h.id}" class="text-slate-600 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors text-sm no-underline">${escapeHtml(h.text)}</a></li>`;
     });
 
+    // Close any remaining open lists
+    for (let i = 2; i < currentLevel; i++) {
+      html += '</ol>';
+    }
     html += '</ol>';
+
     return html;
   }
 
@@ -116,6 +148,7 @@ window.SK.renderer = (function() {
     if (links.length === 0) return;
 
     const headings = Array.from(document.querySelectorAll('#article-body h2, #article-body h3, #article-body h4'));
+    if (headings.length === 0) return;
 
     const observer = new IntersectionObserver(entries => {
       let current = null;
@@ -127,8 +160,10 @@ window.SK.renderer = (function() {
 
       // Update active link in TOC
       links.forEach(link => {
+        const href = link.getAttribute('href');
         link.classList.remove('active');
-        if (link.getAttribute('href') === '#' + current) {
+        
+        if (current && href === '#' + current) {
           link.classList.add('active');
         }
       });
@@ -136,18 +171,35 @@ window.SK.renderer = (function() {
       rootMargin: '-80px 0px -80% 0px'
     });
 
-    headings.forEach(h => observer.observe(h));
+    headings.forEach(h => {
+      if (h.id) observer.observe(h);
+    });
   }
 
   // Full rendering pipeline
   function render(markdown) {
-    if (!markdown) return { html: '', toc: '', headings: [] };
+    if (!markdown) {
+      return {
+        html: '<p class="text-slate-500">No content available</p>',
+        toc: '<p class="text-slate-500 text-sm">No sections</p>',
+        headings: []
+      };
+    }
 
-    const html = renderMarkdown(markdown);
-    const headings = buildTableOfContents(html);
-    const toc = renderTOC(headings);
+    try {
+      const html = renderMarkdown(markdown);
+      const headings = buildTableOfContents(html);
+      const toc = renderTOC(headings);
 
-    return { html, toc, headings };
+      return { html, toc, headings };
+    } catch (error) {
+      console.error('Render pipeline error:', error);
+      return {
+        html: `<p class="text-red-600">Error rendering content</p>`,
+        toc: '<p class="text-slate-500 text-sm">Error building TOC</p>',
+        headings: []
+      };
+    }
   }
 
   return {
