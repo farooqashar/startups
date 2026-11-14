@@ -143,6 +143,24 @@ window.SK.app = (function() {
   // Setup routing
   function setupRouting() {
     window.addEventListener('hashchange', handleRoute);
+    document.addEventListener('click', handleSectionLinkClick);
+  }
+
+  // In-page section links (TOC entries, heading "#" anchors) would replace the
+  // route hash, so scroll to the section instead of navigating
+  function handleSectionLinkClick(event) {
+    const link = event.target.closest('#article-body a, #toc-list a, #quickref-content a');
+    if (!link) return;
+
+    const href = link.getAttribute('href');
+    if (!href || !href.startsWith('#') || href.startsWith('#/')) return;
+
+    event.preventDefault();
+    const view = link.closest('main > section') || document;
+    const target = view.querySelector('#' + CSS.escape(decodeURIComponent(href.substring(1))));
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth' });
+    }
   }
 
   // Handle hash route changes
