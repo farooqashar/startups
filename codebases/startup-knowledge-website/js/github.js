@@ -6,7 +6,7 @@ window.SK.github = (function() {
   const OWNER = 'farooqashar';
   const REPO = 'startups';
   const API_BASE = `https://api.github.com/repos/${OWNER}/${REPO}/contents`;
-  const CACHE_PREFIX = 'sk_';
+  const CACHE_PREFIX = 'sk2_'; // bumped so content cached by the old non-UTF-8 decoder is ignored
   const CACHE_TTL = 3600000; // 1 hour in milliseconds
 
   let rateLimitRemaining = 60;
@@ -95,10 +95,11 @@ window.SK.github = (function() {
         throw new Error('No content in GitHub response');
       }
 
-      // Decode base64 content
+      // Decode base64 content as UTF-8 (atob alone returns a byte string)
       let content;
       try {
-        content = atob(data.content.replace(/\n/g, ''));
+        const bin = atob(data.content.replace(/\n/g, ''));
+        content = new TextDecoder('utf-8').decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
       } catch (e) {
         console.error('Failed to decode content:', e);
         throw new Error('Failed to decode file content');
