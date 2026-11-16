@@ -65,7 +65,7 @@ This keeps the website snappy and respects GitHub's 60 req/hour unauthenticated 
 ### Search
 - Live search as you type
 - Scored results (title matches boost score)
-- Works across all loaded content
+- Indexes every guide on first search (cached, falls back to embedded excerpts)
 
 ## Deployment
 

@@ -4,6 +4,8 @@ window.SK = window.SK || {};
 
 window.SK.search = (function() {
   let searchIndex = [];
+  let indexPromise = null;
+  let indexReady = false;
   const DEBOUNCE_DELAY = 200;
   let debounceTimer = null;
 
@@ -18,22 +20,41 @@ window.SK.search = (function() {
       .toLowerCase()
       .trim();
 
-    // Only index if not already indexed
-    const exists = searchIndex.find(item => item.path === path);
-    if (!exists) {
-      searchIndex.push({
-        path,
-        title,
-        url: '#/read/' + path.replace(/\.md$/, ''),
-        text: plainText,
-        snippet: plainText.substring(0, 150),
-      });
+    const entry = {
+      path,
+      title,
+      url: '#/read/' + path.replace(/\.md$/, ''),
+      text: plainText,
+      snippet: plainText.substring(0, 150),
+    };
+
+    // Replace an existing entry so a full article supersedes a fallback excerpt
+    const existingIndex = searchIndex.findIndex(item => item.path === path);
+    if (existingIndex === -1) {
+      searchIndex.push(entry);
+    } else {
+      searchIndex[existingIndex] = entry;
     }
+  }
+
+  // Index every manifest entry once. fetchFile reuses the session/local cache
+  // and falls back to embedded excerpts; with neither, index title and description
+  function buildIndex() {
+    if (!indexPromise) {
+      indexPromise = Promise.allSettled(SK.CONTENT_MANIFEST.map(item =>
+        SK.github.fetchFile(item.path)
+          .then(markdown => indexContent(item.path, item.title, markdown))
+          .catch(() => indexContent(item.path, item.title, item.title + '\n' + item.description))
+      )).then(() => { indexReady = true; });
+    }
+    return indexPromise;
   }
 
   // Clear search index
   function clearIndex() {
     searchIndex = [];
+    indexPromise = null;
+    indexReady = false;
   }
 
   // Search with scoring
@@ -113,6 +134,24 @@ window.SK.search = (function() {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  // Shown while the index is being built
+  function renderSearching(query) {
+    return `<div class="text-center py-12">
+      <p class="text-slate-600 dark:text-slate-400">Searching for "<strong>${escapeHtml(query)}</strong>"…</p>
+    </div>`;
+  }
+
+  // Build the index if needed, then render results into container.
+  // isCurrent() returning false means a newer search replaced this one
+  async function searchAndRender(query, container, isCurrent) {
+    if (!indexReady) {
+      container.innerHTML = renderSearching(query);
+    }
+    await buildIndex();
+    if (isCurrent && !isCurrent()) return;
+    container.innerHTML = renderResults(query, search(query));
+  }
+
   // Render search results
   function renderResults(query, results) {
     if (!results || results.length === 0) {
@@ -157,10 +196,17 @@ window.SK.search = (function() {
     return div.innerHTML;
   }
 
-  // Handle search input with debounce
+  // Handle search input with debounce (header on desktop, sidebar on phones)
   function setupSearchInput() {
-    const searchInput = document.getElementById('header-search');
-    if (!searchInput) return;
+    ['header-search', 'sidebar-search'].forEach(id => {
+      const searchInput = document.getElementById(id);
+      if (searchInput) bindSearchInput(searchInput);
+    });
+  }
+
+  function bindSearchInput(searchInput) {
+    // Start building the index as soon as the visitor shows intent to search
+    searchInput.addEventListener('focus', buildIndex);
 
     // Live search as you type
     searchInput.addEventListener('input', (e) => {
@@ -169,14 +215,9 @@ window.SK.search = (function() {
 
       debounceTimer = setTimeout(() => {
         if (query.length > 0) {
-          const results = search(query);
           const resultsContainer = document.getElementById('search-results');
           if (resultsContainer) {
-            if (results.length === 0) {
-              resultsContainer.innerHTML = '';
-            } else {
-              resultsContainer.innerHTML = renderResults(query, results);
-            }
+            searchAndRender(query, resultsContainer, () => searchInput.value.trim() === query);
           }
         }
       }, DEBOUNCE_DELAY);
@@ -189,6 +230,7 @@ window.SK.search = (function() {
         if (query) {
           window.location.hash = '#/search?q=' + encodeURIComponent(query);
           searchInput.blur();
+          if (searchInput.id === 'sidebar-search') SK.app.toggleSidebar();
         }
       }
     });
@@ -196,7 +238,9 @@ window.SK.search = (function() {
 
   return {
     indexContent,
+    buildIndex,
     search,
+    searchAndRender,
     renderResults,
     clearIndex,
     setupSearchInput,

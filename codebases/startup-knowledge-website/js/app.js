@@ -369,9 +369,8 @@ window.SK.app = (function() {
       return;
     }
 
-    const results = SK.search.search(query);
-    const resultsHtml = SK.search.renderResults(query, results);
-    resultsContainer.innerHTML = resultsHtml;
+    const hash = window.location.hash;
+    SK.search.searchAndRender(query, resultsContainer, () => window.location.hash === hash);
   }
 
   // Browse category
