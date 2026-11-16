@@ -85,7 +85,7 @@ window.SK.github = (function() {
         const excerpt = window.SK.EXCERPTS && window.SK.EXCERPTS[path];
         if (excerpt) {
           console.warn(`GitHub API error for ${path}:`, response.status);
-          return excerpt + '\n\n> ⚠️ **Error**: Could not load from GitHub (${response.status}). [View full content on GitHub](https://github.com/farooqashar/startups/blob/main/' + path + ')';
+          return excerpt + '\n\n> ⚠️ **Error**: Could not load from GitHub (' + response.status + '). [View full content on GitHub](https://github.com/farooqashar/startups/blob/main/' + path + ')';
         }
         throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
       }
