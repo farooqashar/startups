@@ -4,12 +4,25 @@ window.SK = window.SK || {};
 
 window.SK.search = (function() {
   let searchIndex = [];
+  let indexPromise = null;
+  let indexReady = false;
+  let lastBuild = 0;
+  const DOC_TIMEOUT = 8000; // per-document wait before indexing a fallback
+  const RETRY_DELAY = 60000; // minimum gap before refetching incomplete documents
   const DEBOUNCE_DELAY = 200;
   let debounceTimer = null;
 
-  // Build search index from markdown content
-  function indexContent(path, title, markdown) {
+  // Content quality, so a weaker fallback never replaces richer content
+  const QUALITY_META = 0, QUALITY_EXCERPT = 1, QUALITY_FULL = 2;
+
+  // Build search index from markdown content. Without an explicit quality,
+  // content fetchFile cached for this session is the full article; anything
+  // else it returned is an embedded excerpt
+  function indexContent(path, title, markdown, quality) {
     if (!markdown || !title) return;
+    if (quality === undefined) {
+      quality = SK.github.isSessionCached(path) ? QUALITY_FULL : QUALITY_EXCERPT;
+    }
 
     // Plain text: remove markdown syntax
     const plainText = markdown
@@ -18,22 +31,70 @@ window.SK.search = (function() {
       .toLowerCase()
       .trim();
 
-    // Only index if not already indexed
-    const exists = searchIndex.find(item => item.path === path);
-    if (!exists) {
-      searchIndex.push({
-        path,
-        title,
-        url: '#/read/' + path.replace(/\.md$/, ''),
-        text: plainText,
-        snippet: plainText.substring(0, 150),
-      });
+    const entry = {
+      path,
+      title,
+      url: '#/read/' + path.replace(/\.md$/, ''),
+      text: plainText,
+      snippet: plainText.substring(0, 150),
+      quality,
+    };
+
+    // Replace an existing entry only with content at least as rich
+    const existingIndex = searchIndex.findIndex(item => item.path === path);
+    if (existingIndex === -1) {
+      searchIndex.push(entry);
+    } else if (quality >= searchIndex[existingIndex].quality) {
+      searchIndex[existingIndex] = entry;
     }
+  }
+
+  function indexMeta(item) {
+    indexContent(item.path, item.title, item.title + '\n' + item.description, QUALITY_META);
+  }
+
+  // Fetch one document, waiting at most DOC_TIMEOUT. On a timeout or error the
+  // title and description are indexed; a slow fetch that later succeeds still
+  // indexes its content
+  function indexDocument(item) {
+    let timer;
+    const fetched = SK.github.fetchFile(item.path)
+      .then(markdown => indexContent(item.path, item.title, markdown))
+      .catch(() => indexMeta(item))
+      .finally(() => clearTimeout(timer));
+    const timeout = new Promise(resolve => { timer = setTimeout(resolve, DOC_TIMEOUT); })
+      .then(() => indexMeta(item));
+    return Promise.race([fetched, timeout]);
+  }
+
+  function incompleteItems() {
+    return SK.CONTENT_MANIFEST.filter(item => {
+      const entry = searchIndex.find(e => e.path === item.path);
+      return !entry || entry.quality < QUALITY_FULL;
+    });
+  }
+
+  // Index every manifest entry. fetchFile reuses the session/local cache and
+  // falls back to embedded excerpts. Later calls refetch documents that only
+  // got a fallback, at most once per RETRY_DELAY
+  function buildIndex() {
+    if (indexPromise) return indexPromise;
+    const items = indexReady ? incompleteItems() : SK.CONTENT_MANIFEST;
+    if (items.length === 0 || (indexReady && Date.now() - lastBuild < RETRY_DELAY)) {
+      return Promise.resolve();
+    }
+    lastBuild = Date.now();
+    indexPromise = Promise.allSettled(items.map(indexDocument))
+      .then(() => { indexReady = true; indexPromise = null; });
+    return indexPromise;
   }
 
   // Clear search index
   function clearIndex() {
     searchIndex = [];
+    indexPromise = null;
+    indexReady = false;
+    lastBuild = 0;
   }
 
   // Search with scoring
@@ -90,7 +151,7 @@ window.SK.search = (function() {
     if (!text || !term) return 'No preview available';
 
     const index = text.toLowerCase().indexOf(term.toLowerCase());
-    if (index === -1) return text.substring(0, length) + (text.length > length ? '...' : '');
+    if (index === -1) return escapeHtml(text.substring(0, length)) + (text.length > length ? '...' : '');
 
     const start = Math.max(0, index - length / 2);
     const end = Math.min(text.length, start + length);
@@ -99,18 +160,43 @@ window.SK.search = (function() {
     if (start > 0) snippet = '...' + snippet;
     if (end < text.length) snippet = snippet + '...';
 
-    // Highlight the matched term
-    snippet = snippet.replace(
-      new RegExp(`(${escapeRegex(term)})`, 'gi'),
-      '<mark class="bg-yellow-200 dark:bg-yellow-700 font-semibold">$1</mark>'
-    );
-
-    return snippet;
+    // Highlight the matched term. Article text is escaped piece by piece so
+    // only the highlight markup is HTML
+    return snippet
+      .split(new RegExp(`(${escapeRegex(term)})`, 'gi'))
+      .map((part, i) => i % 2
+        ? `<mark class="bg-yellow-200 dark:bg-yellow-700 font-semibold">${escapeHtml(part)}</mark>`
+        : escapeHtml(part))
+      .join('');
   }
 
   // Escape special characters in regex
   function escapeRegex(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // Shown while the index is being built
+  function renderSearching(query) {
+    return `<div class="text-center py-12" data-search-pending>
+      <p class="text-slate-600 dark:text-slate-400">Searching for "<strong>${escapeHtml(query)}</strong>"…</p>
+    </div>`;
+  }
+
+  // Build the index if needed, then render results into container. Once the
+  // first build is done, results render at once and again after any refetch.
+  // isCurrent() returning false means a newer search replaced this one
+  async function searchAndRender(query, container, isCurrent) {
+    const render = () => {
+      if (isCurrent && !isCurrent()) return;
+      container.innerHTML = renderResults(query, search(query));
+    };
+    if (indexReady) {
+      render();
+    } else {
+      container.innerHTML = renderSearching(query);
+    }
+    await buildIndex();
+    render();
   }
 
   // Render search results
@@ -157,10 +243,17 @@ window.SK.search = (function() {
     return div.innerHTML;
   }
 
-  // Handle search input with debounce
+  // Handle search input with debounce (header on desktop, sidebar on phones)
   function setupSearchInput() {
-    const searchInput = document.getElementById('header-search');
-    if (!searchInput) return;
+    ['header-search', 'sidebar-search'].forEach(id => {
+      const searchInput = document.getElementById(id);
+      if (searchInput) bindSearchInput(searchInput);
+    });
+  }
+
+  function bindSearchInput(searchInput) {
+    // Start building the index as soon as the visitor shows intent to search
+    searchInput.addEventListener('focus', buildIndex);
 
     // Live search as you type
     searchInput.addEventListener('input', (e) => {
@@ -168,16 +261,13 @@ window.SK.search = (function() {
       const query = e.target.value.trim();
 
       debounceTimer = setTimeout(() => {
+        const resultsContainer = document.getElementById('search-results');
+        if (!resultsContainer) return;
         if (query.length > 0) {
-          const results = search(query);
-          const resultsContainer = document.getElementById('search-results');
-          if (resultsContainer) {
-            if (results.length === 0) {
-              resultsContainer.innerHTML = '';
-            } else {
-              resultsContainer.innerHTML = renderResults(query, results);
-            }
-          }
+          searchAndRender(query, resultsContainer, () => searchInput.value.trim() === query);
+        } else if (resultsContainer.querySelector('[data-search-pending]')) {
+          // The pending search was cleared: drop its loading message
+          resultsContainer.innerHTML = '';
         }
       }, DEBOUNCE_DELAY);
     });
@@ -189,6 +279,7 @@ window.SK.search = (function() {
         if (query) {
           window.location.hash = '#/search?q=' + encodeURIComponent(query);
           searchInput.blur();
+          if (searchInput.id === 'sidebar-search') SK.app.toggleSidebar();
         }
       }
     });
@@ -196,7 +287,9 @@ window.SK.search = (function() {
 
   return {
     indexContent,
+    buildIndex,
     search,
+    searchAndRender,
     renderResults,
     clearIndex,
     setupSearchInput,
