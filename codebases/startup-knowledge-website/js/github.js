@@ -167,11 +167,17 @@ window.SK.github = (function() {
     return !!sessionStorage.getItem(CACHE_PREFIX + path) || !!localStorage.getItem(CACHE_PREFIX + path);
   }
 
+  // Check if this session cached the full file (fallback excerpts are never cached)
+  function isSessionCached(path) {
+    return !!sessionStorage.getItem(CACHE_PREFIX + path);
+  }
+
   return {
     fetchFile,
     getRateLimitInfo,
     clearCache,
     setRateLimit,
     isCached,
+    isSessionCached,
   };
 })();
