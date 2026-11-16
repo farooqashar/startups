@@ -45,6 +45,9 @@
             primary: {
               50: '#f0fdfa',
               100: '#ccfbf1',
+              200: '#99f6e4',
+              300: '#5eead4',
+              400: '#2dd4bf',
               500: '#14b8a6',
               600: '#0d9488',
               700: '#0f766e',
@@ -57,6 +60,8 @@
             surface: {
               50: '#f8fafc',
               100: '#f1f5f9',
+              600: '#475569',
+              700: '#334155',
               800: '#1e293b',
               900: '#0f172a',
             }
@@ -68,7 +73,10 @@
           typography: ({ theme }) => ({
             DEFAULT: {
               css: {
-                color: theme('colors.slate.700'),
+                // Colors go through the prose variables so dark:prose-invert can override them
+                '--tw-prose-body': theme('colors.slate.700'),
+                '--tw-prose-h2': theme('colors.slate.900'),
+                '--tw-prose-h3': theme('colors.slate.800'),
                 'code::before': { content: '' },
                 'code::after': { content: '' },
                 'code': {
@@ -86,11 +94,17 @@
                 'a:hover': {
                   color: theme('colors.primary.700'),
                 },
-                'h2': { color: theme('colors.slate.900'), marginTop: '2rem', marginBottom: '1rem' },
-                'h3': { color: theme('colors.slate.800'), marginTop: '1.5rem', marginBottom: '0.75rem' },
+                'h2': { color: 'var(--tw-prose-h2)', marginTop: '2rem', marginBottom: '1rem' },
+                'h3': { color: 'var(--tw-prose-h3)', marginTop: '1.5rem', marginBottom: '0.75rem' },
                 'table': { margin: '1.5rem 0' },
                 'th': { backgroundColor: theme('colors.primary.50'), color: theme('colors.primary.900') },
                 'td': { borderColor: theme('colors.slate.200') },
+              }
+            },
+            invert: {
+              css: {
+                '--tw-prose-h2': 'var(--tw-prose-invert-headings)',
+                '--tw-prose-h3': 'var(--tw-prose-invert-headings)',
               }
             }
           })
