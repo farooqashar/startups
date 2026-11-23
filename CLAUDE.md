@@ -8,7 +8,7 @@ When working on startup-related tasks or artifacts, consult this repository for:
 
 1. **Understanding startup concepts** — Check [wiki/startup-fundamentals.md](wiki/startup-fundamentals.md) for definitions and core concepts
 2. **Learning best practices** — Review relevant wiki pages for proven strategies and frameworks
-3. **Avoiding common pitfalls** — See [notes/common-mistakes.md](notes/notes/common-mistakes.md) for patterns to avoid
+3. **Avoiding common pitfalls** — See [notes/common-mistakes.md](notes/common-mistakes.md) for patterns to avoid
 4. **Finding tools and resources** — Check [resources/](resources/) for recommended tools, links, and templates
 5. **Learning from case studies** — Review [history/](history/) for real examples and documented decisions
 
