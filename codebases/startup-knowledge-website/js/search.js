@@ -15,6 +15,21 @@ window.SK.search = (function() {
   // Content quality, so a weaker fallback never replaces richer content
   const QUALITY_META = 0, QUALITY_EXCERPT = 1, QUALITY_FULL = 2;
 
+  // Lowercase and swap markdown syntax and hyphens for spaces. Indexed text,
+  // titles and queries all go through this so their terms line up
+  function normalize(text) {
+    return text
+      .replace(/[#\-\*\[\]()]/g, ' ')
+      .replace(/\n+/g, ' ')
+      .toLowerCase()
+      .trim();
+  }
+
+  // Query terms, normalized like the indexed text
+  function queryTerms(query) {
+    return normalize(query).split(/\s+/).filter(t => t.length > 0);
+  }
+
   // Build search index from markdown content. Without an explicit quality,
   // content fetchFile cached for this session is the full article; anything
   // else it returned is an embedded excerpt
@@ -25,11 +40,7 @@ window.SK.search = (function() {
     }
 
     // Plain text: remove markdown syntax
-    const plainText = markdown
-      .replace(/[#\-\*\[\]()]/g, ' ')
-      .replace(/\n+/g, ' ')
-      .toLowerCase()
-      .trim();
+    const plainText = normalize(markdown);
 
     const entry = {
       path,
@@ -101,7 +112,8 @@ window.SK.search = (function() {
   function search(query) {
     if (!query || query.length < 1) return [];
 
-    const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 0);
+    const terms = queryTerms(query);
+    if (terms.length === 0) return [];
     const results = [];
 
     searchIndex.forEach(entry => {
@@ -109,7 +121,7 @@ window.SK.search = (function() {
       let matchCount = 0;
 
       terms.forEach(term => {
-        const titleLower = entry.title.toLowerCase();
+        const titleLower = normalize(entry.title);
         const snippetLower = entry.snippet.toLowerCase();
         const textLower = entry.text.toLowerCase();
 
@@ -170,6 +182,15 @@ window.SK.search = (function() {
       .join('');
   }
 
+  // What to highlight in text: the whole query when it appears as a phrase
+  // (so "co-founder" highlights "co founder"), else the first term found
+  function highlightTerm(query, text) {
+    const terms = queryTerms(query);
+    const phrase = terms.join(' ');
+    if (text.includes(phrase)) return phrase;
+    return terms.find(term => text.includes(term)) || terms[0];
+  }
+
   // Escape special characters in regex
   function escapeRegex(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -215,8 +236,7 @@ window.SK.search = (function() {
     }
 
     return results.map(result => {
-      const searchTerms = query.toLowerCase().split(/\s+/);
-      const snippet = extractSnippet(result.text, searchTerms[0]);
+      const snippet = extractSnippet(result.text, highlightTerm(query, result.text));
       return `<div class="border border-slate-200 dark:border-slate-700 rounded-lg p-5 hover:border-primary-300 dark:hover:border-primary-500 hover:shadow-md transition-all cursor-pointer hover:bg-slate-50 dark:hover:bg-surface-700">
         <a href="${escapeHtml(result.url)}" class="block group">
           <div class="flex items-start justify-between mb-3">
