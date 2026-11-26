@@ -46,7 +46,9 @@ window.SK.app = (function() {
     const html = document.documentElement;
     const sunIcon = document.getElementById('sun-icon');
     const moonIcon = document.getElementById('moon-icon');
-    if (html.classList.contains('dark')) {
+    const isDark = html.classList.contains('dark');
+    document.getElementById('dark-mode-toggle').setAttribute('aria-pressed', String(isDark));
+    if (isDark) {
       sunIcon.style.display = 'block';
       moonIcon.style.display = 'none';
     } else {
@@ -201,8 +203,25 @@ window.SK.app = (function() {
   function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
-    sidebar.classList.toggle('-translate-x-full');
-    overlay.classList.toggle('hidden');
+    const menuBtn = document.getElementById('mobile-menu-btn');
+    const isOpen = sidebar.classList.toggle('-translate-x-full') === false;
+    overlay.classList.toggle('hidden', !isOpen);
+
+    // Keep the closed sidebar out of the Tab order and the accessibility tree
+    sidebar.inert = !isOpen;
+    sidebar.setAttribute('aria-hidden', String(!isOpen));
+    menuBtn.setAttribute('aria-expanded', String(isOpen));
+    menuBtn.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
+
+    if (isOpen) {
+      document.getElementById('sidebar-search').focus({ preventScroll: true });
+    } else {
+      menuBtn.focus();
+    }
+  }
+
+  function isSidebarOpen() {
+    return !document.getElementById('sidebar').classList.contains('-translate-x-full');
   }
 
   // Show a view
@@ -384,6 +403,13 @@ window.SK.app = (function() {
   if (mobileMenuBtn) {
     mobileMenuBtn.addEventListener('click', toggleSidebar);
   }
+
+  // Close the mobile menu on Esc
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isSidebarOpen()) {
+      toggleSidebar();
+    }
+  });
 
   // Initialize on DOM ready
   if (document.readyState === 'loading') {
