@@ -280,6 +280,11 @@ input {
   scroll-margin-top: 5rem;
 }
 
+/* Keep the topic grid clear of the sticky header when scrolled into view */
+#topic-grid {
+  scroll-margin-top: 5rem;
+}
+
 .prose h2 a, .prose h3 a {
   border: none;
   color: inherit;

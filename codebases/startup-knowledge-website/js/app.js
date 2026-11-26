@@ -61,7 +61,7 @@ window.SK.app = (function() {
     const topicGrid = document.querySelector('#topic-grid > div');
     if (topicGrid) {
       topicGrid.innerHTML = SK.CONTENT_MANIFEST.map(item => `
-        <a href="#/read/${item.path.replace(/\.md$/, '')}" class="group">
+        <a href="#/read/${item.path.replace(/\.md$/, '')}" class="group" data-category="${item.category}">
           <div class="border-2 border-slate-200 dark:border-slate-700 rounded-lg p-6 hover:border-primary-500 dark:hover:border-primary-500 hover:bg-slate-50 dark:hover:bg-surface-700 transition-all cursor-pointer">
             <div class="text-3xl mb-4">${item.icon}</div>
             <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-2 group-hover:text-primary-600 transition-colors">
@@ -171,6 +171,7 @@ window.SK.app = (function() {
 
     if (parts.length === 0) {
       showView('home');
+      filterTopicGrid(null);
     } else if (parts[0] === 'read' && parts.length >= 2) {
       const filePath = parts.slice(1).join('/') + '.md';
       loadArticle(filePath);
@@ -178,10 +179,13 @@ window.SK.app = (function() {
       showQuickReference();
     } else if (parts[0] === 'search') {
       showSearch(new URLSearchParams(query).get('q'));
+    } else if (parts[0] === 'topics') {
+      showBrowse(null);
     } else if (['wiki', 'notes', 'history', 'resources'].includes(parts[0])) {
       showBrowse(parts[0]);
     } else {
       showView('home');
+      filterTopicGrid(null);
     }
   }
 
@@ -192,9 +196,14 @@ window.SK.app = (function() {
     }
   }
 
-  // Navigate to a route
+  // Navigate to a route; re-run it when already there, since the hash
+  // won't change (e.g. "Explore Topics" after scrolling back up)
   function navigate(route) {
-    window.location.hash = route;
+    if (window.location.hash === route) {
+      handleRoute();
+    } else {
+      window.location.hash = route;
+    }
   }
 
   // Toggle mobile sidebar
@@ -373,10 +382,34 @@ window.SK.app = (function() {
     SK.search.searchAndRender(query, resultsContainer, () => window.location.hash === hash);
   }
 
-  // Browse category
+  // Browse the topic grid, limited to one category when given
   function showBrowse(category) {
     showView('home');
-    // Filter and highlight category if needed
+    filterTopicGrid(category);
+
+    const grid = document.getElementById('topic-grid');
+    if (grid) {
+      grid.scrollIntoView({ behavior: 'smooth' });
+    }
+  }
+
+  // Show only one category's cards in the topic grid, or all of them for null
+  function filterTopicGrid(category) {
+    document.querySelectorAll('#topic-grid [data-category]').forEach(card => {
+      card.classList.toggle('hidden', category !== null && card.dataset.category !== category);
+    });
+
+    const filter = document.getElementById('topic-filter');
+    if (filter) {
+      if (category) {
+        const label = category.charAt(0).toUpperCase() + category.slice(1);
+        filter.innerHTML = `Showing ${label} guides · <a href="#/topics" class="text-primary-600 dark:text-primary-400 hover:underline">All topics</a>`;
+        filter.classList.remove('hidden');
+      } else {
+        filter.innerHTML = '';
+        filter.classList.add('hidden');
+      }
+    }
   }
 
   // Mobile menu
