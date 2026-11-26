@@ -11,13 +11,25 @@ window.SK.renderer = (function() {
     mangle: false,
   });
 
+  // Heading ids already used in the current render, so repeats get a suffix
+  const usedSlugs = new Map();
+
+  function uniqueSlug(slug) {
+    let id = slug;
+    let count = usedSlugs.get(slug) || 0;
+    while (usedSlugs.has(id)) {
+      count++;
+      id = `${slug}-${count}`;
+    }
+    usedSlugs.set(slug, count);
+    if (id !== slug) usedSlugs.set(id, 0);
+    return id;
+  }
+
   // Custom renderer for marked
   const customRenderer = {
     heading(text, level) {
-      const id = text.toLowerCase()
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-');
+      const id = uniqueSlug(generateId(text));
 
       return `<h${level} id="${id}" class="group">
         ${text}
@@ -73,6 +85,7 @@ window.SK.renderer = (function() {
   // Render markdown to HTML
   function renderMarkdown(markdown) {
     if (!markdown) return '';
+    usedSlugs.clear();
     try {
       return marked.parse(markdown);
     } catch (error) {
