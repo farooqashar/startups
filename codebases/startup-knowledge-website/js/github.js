@@ -11,7 +11,7 @@ window.SK.github = (function() {
 
   let rateLimitRemaining = 60;
   let rateLimitReset = null;
-  let inFlight = new Set();
+  const inFlight = new Map(); // path -> promise of the request in progress
 
   // Fetch a file from GitHub with 3-tier caching strategy
   async function fetchFile(path) {
@@ -37,6 +37,12 @@ window.SK.github = (function() {
       }
     }
 
+    // The rate limit is over once its reset time has passed
+    if (rateLimitRemaining <= 0 && rateLimitReset && Date.now() >= rateLimitReset.getTime()) {
+      rateLimitRemaining = 60;
+      rateLimitReset = null;
+    }
+
     // If rate-limited, use embedded fallback
     if (rateLimitRemaining <= 0) {
       const excerpt = window.SK.EXCERPTS && window.SK.EXCERPTS[path];
@@ -45,27 +51,20 @@ window.SK.github = (function() {
       }
     }
 
-    // Prevent duplicate requests for same file
+    // Concurrent callers for the same file share one request and settle the same way
     if (inFlight.has(path)) {
-      return new Promise((resolve, reject) => {
-        const checkInterval = setInterval(() => {
-          const cached = sessionStorage.getItem(CACHE_PREFIX + path);
-          if (cached) {
-            clearInterval(checkInterval);
-            resolve(cached);
-          }
-        }, 100);
-
-        // Timeout after 10 seconds
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          reject(new Error('Timeout waiting for file'));
-        }, 10000);
-      });
+      return inFlight.get(path);
     }
 
-    // Fetch from GitHub API
-    inFlight.add(path);
+    const request = fetchFromGitHub(path).finally(() => {
+      inFlight.delete(path);
+    });
+    inFlight.set(path, request);
+    return request;
+  }
+
+  // Fetch a file from the GitHub API, falling back to its embedded excerpt
+  async function fetchFromGitHub(path) {
     try {
       const response = await fetch(`${API_BASE}/${path}`, {
         headers: {
@@ -121,8 +120,6 @@ window.SK.github = (function() {
       }
       
       throw error;
-    } finally {
-      inFlight.delete(path);
     }
   }
 
