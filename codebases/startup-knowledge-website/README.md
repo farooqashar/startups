@@ -50,7 +50,7 @@ This keeps the website snappy and respects GitHub's 60 req/hour unauthenticated 
 ## How It Works
 
 ### Home Page
-- Topic grid with 10 guides
+- Topic grid with every guide in `CONTENT_MANIFEST` (`js/data.js`)
 - Featured case studies (6 companies)
 - Quick metrics reference table
 - Links to GitHub repo
@@ -72,9 +72,12 @@ This keeps the website snappy and respects GitHub's 60 req/hour unauthenticated 
 The website is live at: **https://farooqashar.github.io/startups**
 
 ### How GitHub Pages Works
-- Files at repo root (`index.html`, `css/`, `js/`) are served by GitHub Pages
-- Source code is organized in `codebases/startup-knowledge-website/` for better organization
-- Both locations stay in sync (root copies are used for serving)
+- The source lives only in `codebases/startup-knowledge-website/`
+- `.github/workflows/deploy.yml` publishes this folder to the `gh-pages`
+  branch on every push to `main` that touches this folder or the workflow
+- GitHub Pages serves the `gh-pages` branch. Don't edit that branch by
+  hand: each deploy replaces it
+- To redeploy, push a change under `codebases/startup-knowledge-website/`
 
 ### Local Development
 Simply open `index.html` in a browser. Works with `file://` protocol.
