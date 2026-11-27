@@ -8,6 +8,7 @@ window.SK.github = (function() {
   const API_BASE = `https://api.github.com/repos/${OWNER}/${REPO}/contents`;
   const CACHE_PREFIX = 'sk2_'; // bumped so content cached by the old non-UTF-8 decoder is ignored
   const CACHE_TTL = 3600000; // 1 hour in milliseconds
+  const FETCH_TIMEOUT = 10000; // a request that stalls longer is aborted, for every caller sharing it
 
   let rateLimitRemaining = 60;
   let rateLimitReset = null;
@@ -37,6 +38,12 @@ window.SK.github = (function() {
       }
     }
 
+    // Concurrent callers for the same file share one request and settle the same way,
+    // even if that request has since used up the rate limit
+    if (inFlight.has(path)) {
+      return inFlight.get(path);
+    }
+
     // The rate limit is over once its reset time has passed
     if (rateLimitRemaining <= 0 && rateLimitReset && Date.now() >= rateLimitReset.getTime()) {
       rateLimitRemaining = 60;
@@ -51,11 +58,6 @@ window.SK.github = (function() {
       }
     }
 
-    // Concurrent callers for the same file share one request and settle the same way
-    if (inFlight.has(path)) {
-      return inFlight.get(path);
-    }
-
     const request = fetchFromGitHub(path).finally(() => {
       inFlight.delete(path);
     });
@@ -63,14 +65,21 @@ window.SK.github = (function() {
     return request;
   }
 
-  // Fetch a file from the GitHub API, falling back to its embedded excerpt
+  // Fetch a file from the GitHub API, falling back to its embedded excerpt. A request
+  // (headers or body) that stalls past FETCH_TIMEOUT is aborted, so the shared promise
+  // always settles and the in-flight entry is cleared
   async function fetchFromGitHub(path) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort(new Error(`Timed out after ${FETCH_TIMEOUT / 1000} seconds`));
+    }, FETCH_TIMEOUT);
     try {
       const response = await fetch(`${API_BASE}/${path}`, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
           'User-Agent': 'Startup-Knowledge-Base'
-        }
+        },
+        signal: controller.signal
       });
 
       // Update rate limit info
@@ -120,6 +129,8 @@ window.SK.github = (function() {
       }
       
       throw error;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
