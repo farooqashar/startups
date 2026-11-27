@@ -8,10 +8,11 @@ window.SK.github = (function() {
   const API_BASE = `https://api.github.com/repos/${OWNER}/${REPO}/contents`;
   const CACHE_PREFIX = 'sk2_'; // bumped so content cached by the old non-UTF-8 decoder is ignored
   const CACHE_TTL = 3600000; // 1 hour in milliseconds
+  const FETCH_TIMEOUT = 10000; // a request that stalls longer is aborted, for every caller sharing it
 
   let rateLimitRemaining = 60;
   let rateLimitReset = null;
-  let inFlight = new Set();
+  const inFlight = new Map(); // path -> promise of the request in progress
 
   // Fetch a file from GitHub with 3-tier caching strategy
   async function fetchFile(path) {
@@ -37,6 +38,18 @@ window.SK.github = (function() {
       }
     }
 
+    // Concurrent callers for the same file share one request and settle the same way,
+    // even if that request has since used up the rate limit
+    if (inFlight.has(path)) {
+      return inFlight.get(path);
+    }
+
+    // The rate limit is over once its reset time has passed
+    if (rateLimitRemaining <= 0 && rateLimitReset && Date.now() >= rateLimitReset.getTime()) {
+      rateLimitRemaining = 60;
+      rateLimitReset = null;
+    }
+
     // If rate-limited, use embedded fallback
     if (rateLimitRemaining <= 0) {
       const excerpt = window.SK.EXCERPTS && window.SK.EXCERPTS[path];
@@ -45,33 +58,28 @@ window.SK.github = (function() {
       }
     }
 
-    // Prevent duplicate requests for same file
-    if (inFlight.has(path)) {
-      return new Promise((resolve, reject) => {
-        const checkInterval = setInterval(() => {
-          const cached = sessionStorage.getItem(CACHE_PREFIX + path);
-          if (cached) {
-            clearInterval(checkInterval);
-            resolve(cached);
-          }
-        }, 100);
+    const request = fetchFromGitHub(path).finally(() => {
+      inFlight.delete(path);
+    });
+    inFlight.set(path, request);
+    return request;
+  }
 
-        // Timeout after 10 seconds
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          reject(new Error('Timeout waiting for file'));
-        }, 10000);
-      });
-    }
-
-    // Fetch from GitHub API
-    inFlight.add(path);
+  // Fetch a file from the GitHub API, falling back to its embedded excerpt. A request
+  // (headers or body) that stalls past FETCH_TIMEOUT is aborted, so the shared promise
+  // always settles and the in-flight entry is cleared
+  async function fetchFromGitHub(path) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort(new Error(`Timed out after ${FETCH_TIMEOUT / 1000} seconds`));
+    }, FETCH_TIMEOUT);
     try {
       const response = await fetch(`${API_BASE}/${path}`, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
           'User-Agent': 'Startup-Knowledge-Base'
-        }
+        },
+        signal: controller.signal
       });
 
       // Update rate limit info
@@ -122,7 +130,7 @@ window.SK.github = (function() {
       
       throw error;
     } finally {
-      inFlight.delete(path);
+      clearTimeout(timer);
     }
   }
 
